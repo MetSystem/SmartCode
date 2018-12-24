@@ -8,23 +8,22 @@ using SmartSql.Abstractions;
 
 namespace SmartCode.ETL.PostgreSql
 {
-    public class PGETLRepository : IETLRepository
+    public class PGETLTaskRepository : IETLTaskRepository
     {
         private const string CONNECTION_STRING = "ConnectionString";
         private readonly ILoggerFactory _loggerFactory;
-        private string _connectionString = String.Empty;
         private const string DEFAULT_SQLMAP_PATH = "PGETL_SqlMaps";
         public bool Initialized { get; private set; }
         public string Name => "PG";
         public string Scope => "EtlTask";
         public ISmartSqlMapper SqlMapper { get; set; }
-        public PGETLRepository(ILoggerFactory loggerFactory)
+        public PGETLTaskRepository(ILoggerFactory loggerFactory)
         {
             _loggerFactory = loggerFactory;
         }
         public void Initialize(IDictionary<string, object> paramters)
         {
-            paramters.EnsureValue(CONNECTION_STRING, out _connectionString);
+            paramters.EnsureValue(CONNECTION_STRING, out string connectionString);
             SqlMapper = SmartSqlMapperFactory.Create(new SmartSqlMapperFactory.CreateSmartSqlMapperOptions
             {
                 Alias = "PGETLRepository",
@@ -33,7 +32,7 @@ namespace SmartCode.ETL.PostgreSql
                 SqlMapPath = DEFAULT_SQLMAP_PATH,
                 DataSource = new SmartSql.Configuration.WriteDataSource
                 {
-                    ConnectionString = _connectionString,
+                    ConnectionString = connectionString,
                     Name = "PGETL"
                 }
             });

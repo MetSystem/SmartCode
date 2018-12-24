@@ -1,11 +1,19 @@
 ﻿@using SmartCode
 @using SmartCode.Db
-@using SmartCode.CLI
+@using System.Text.RegularExpressions
 @model BuildContext
 @{
     Layout = "_SqlMapLayout.cshtml";
     var project = Model.Project;
     var dbSource = Model.GetDataSource<DbSource>();
+    var versionNo = 2008;
+    var sqlServerVersion = dbSource.DbRepository.SqlMapper.ExecuteScalar<String>(new SmartSql.Abstractions.RequestContext
+    {
+        RealSql = "Select @@Version;"
+    });
+    var versionRegex = new Regex(@"^Microsoft SQL Server (\d*)", RegexOptions.Singleline);
+    var versionNoStr = versionRegex.Match(sqlServerVersion).Groups[1].Value;
+    int.TryParse(versionNoStr, out versionNo);
     var buildTask = Model.Build;
     var table = Model.GetCurrentTable();
     var pkCol = table.PKColumn;
@@ -15,7 +23,7 @@
     }
     var primaryKeyType = pkCol?.LanguageType ?? "int";
     var autoIncrement = table.AutoIncrement;
-    var prefix = dbSource.DbProvider.ParameterPrefix;
+    var dbPrefix = dbSource.DbProvider.ParameterPrefix;
     var notEqCols = table.Columns.Where(m => m.ConvertedName != m.Name);
     var resultMapName = $"{table.ConvertedName}ResultMap";
     var queryStatementResultMap = table.HasColNameNotEqConvertedName ? $"ResultMap=\"{resultMapName}\"" : "";
@@ -24,12 +32,26 @@
 @section QueryByPage
     {
     <!--获取分页数据-->
-    <Statement Id="QueryByPage" @queryStatementResultMap>
-        Select TT.* From
-        (Select ROW_NUMBER() Over(Order By T.@pkCol.Name Desc) Row_Index,T.* From @table.Name T With(NoLock)
-        <Include RefId="QueryParams" />) TT
-        Where TT.Row_Index Between ((@@PageIndex-1)*@@PageSize+1) And (@@PageIndex*@@PageSize)
-    </Statement>
+<Statement Id="QueryByPage" @queryStatementResultMap>
+    @if (versionNo > 2012)
+    {
+        <text>
+            Select T.* From @table.Name T With(NoLock)
+            <Include RefId="QueryParams" />
+            Order By T.@pkCol.Name Desc
+            Offset ((@(dbPrefix)PageIndex-1)*@(dbPrefix)PageSize) Rows Fetch Next @(dbPrefix)PageSize Rows Only;
+        </text>
+    }
+    else
+    {
+        <text>
+            Select TT.* From
+            (Select ROW_NUMBER() Over(Order By T.@pkCol.Name Desc) Row_Index,T.* From @table.Name T With(NoLock)
+            <Include RefId="QueryParams" />) TT
+            Where TT.Row_Index Between ((@(dbPrefix)PageIndex-1)*@(dbPrefix)PageSize+1) And (@(dbPrefix)PageIndex*@(dbPrefix)PageSize);
+        </text>
+    }
+</Statement>
 }
 @section GetEntity
     {
@@ -38,7 +60,7 @@
         Select Top 1 T.* From @table.Name T With(NoLock)
         <Where>
             <IsNotEmpty Prepend="And" Property="@pkCol.ConvertedName">
-                T.@pkCol.Name=@prefix@pkCol.ConvertedName
+                T.@pkCol.Name=@dbPrefix@pkCol.ConvertedName
             </IsNotEmpty>
         </Where>
     </Statement>
@@ -48,9 +70,9 @@
     {
     <!--获取数据列-->
     <Statement Id="Query" @queryStatementResultMap>
-        SELECT 
+        SELECT
         <IsNotEmpty Prepend="Top" Property="Taken">
-            (@(prefix)Taken)
+            (@(dbPrefix)Taken)
         </IsNotEmpty>
         T.* From @table.Name T
         <Include RefId="QueryParams" />
